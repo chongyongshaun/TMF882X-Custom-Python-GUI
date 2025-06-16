@@ -8,8 +8,9 @@ class RootGUI:
         self.root.config(bg="white")
 
 class ComGUI:
-    def __init__(self, root):
+    def __init__(self, root, serial):
         self.root = root
+        self.serial = serial
         self.frame = LabelFrame(root, text="COM Manager", padx=5, pady=5, bg="white")
         self.label_com = Label(self.frame, text="Available Ports:", bg="white", width=15, anchor="w")
         self.label_bd = Label(self.frame, text="Baud Rate:", bg="white", width=15, anchor="w")
@@ -24,8 +25,8 @@ class ComGUI:
         self.publish()
 
     def ComOptionMenu(self):
-        coms = ["-", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9"]
-        self.clicked_com = StringVar()
+        coms = self.serial.getComPorts()
+        self.clicked_com = StringVar() 
         self.clicked_com.set(coms[0])
         self.drop_com = OptionMenu(self.frame, self.clicked_com, *coms, command=self.connect_ctrl)
         self.drop_com.config(width=10)
@@ -50,7 +51,8 @@ class ComGUI:
                "57600",
                "115200",
                "128000",
-               "256000"]
+               "256000",
+               "1000000"]
         self.clicked_bd .set(bds[0])
         self.drop_baud = OptionMenu(self.frame, self.clicked_bd, *bds, command=self.connect_ctrl)
         self.drop_baud.config(width=10)
@@ -64,7 +66,7 @@ class ComGUI:
         self.drop_baud.grid(row=3, column=2)
         self.btn_connect.grid(row=3, column=3)
 
-    def connect_ctrl(self, other):
+    def connect_ctrl(self, *args):
         '''
         Method to control the connect button
         '''
@@ -74,7 +76,13 @@ class ComGUI:
             self.btn_connect.config(state="normal")
 
     def com_refresh(self):
-        print("Refreshing COM ports...") #placeholder
+        self.drop_com.destroy()
+        self.ComOptionMenu() #recreate self.drop_com which is a OptionMenu object
+        self.drop_com.grid(row=2, column=2) #republish the new drop menu
+
+        self.connect_ctrl() #recheck the connect button state
+
+        print("Refreshing COM ports...")
 
     def serial_connect(self):
         print(f"Connecting to {self.clicked_com.get()} at {self.clicked_bd.get()} baud...") #placeholder
