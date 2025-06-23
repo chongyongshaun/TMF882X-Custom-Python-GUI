@@ -1,4 +1,5 @@
 from tkinter import *
+from tkinter import messagebox
 
 class RootGUI:
     def __init__(self):
@@ -83,9 +84,41 @@ class ComGUI:
         self.connect_ctrl() #recheck the connect button state
 
         print("Refreshing COM ports...")
-
+        
     def serial_connect(self):
+        '''
+        Method that Updates the GUI during connect / disconnect status
+        Manage serials and data flows during connect / disconnect status
+        '''
         print(f"Connecting to {self.clicked_com.get()} at {self.clicked_bd.get()} baud...") #placeholder
+        if self.btn_connect["text"] in "Connect":
+            # Start the serial communication
+            self.serial.SerialOpen(self)
+
+            # If connection established move on
+            if self.serial.ser.status:
+                # Update the COM manager
+                self.btn_connect["text"] = "Disconnect"
+                self.btn_refresh["state"] = "disable"
+                self.drop_baud["state"] = "disable"
+                self.drop_com["state"] = "disable"
+                InfoMsg = f"Successful UART connection using {self.clicked_com.get()}"
+                messagebox.showinfo("showinfo", InfoMsg)
+            else:
+                ErrorMsg = f"Failure to estabish UART connection using {self.clicked_com.get()} "
+                messagebox.showerror("showerror", ErrorMsg)
+        else:
+
+            # Closing the Serial COM
+            # Close the serial communication
+            self.serial.SerialClose(self)
+
+            InfoMsg = f"UART connection using {self.clicked_com.get()} is now closed"
+            messagebox.showwarning("showinfo", InfoMsg)
+            self.btn_connect["text"] = "Connect"
+            self.btn_refresh["state"] = "active"
+            self.drop_baud["state"] = "active"
+            self.drop_com["state"] = "active"
 
 
 
