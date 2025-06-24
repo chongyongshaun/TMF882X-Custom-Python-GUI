@@ -1,3 +1,4 @@
+import time
 import serial.tools.list_ports
 
 class SerialCtrl:
@@ -21,7 +22,11 @@ class SerialCtrl:
 
         try:
             if not hasattr(self, 'ser') or self.ser is None or not self.ser.is_open:
-                self.ser = serial.Serial(port=PORT, baudrate=int(BAUD), timeout=0.1)
+                self.ser = serial.Serial(
+                    port=PORT, 
+                    baudrate=int(BAUD), 
+                    timeout=0.1,
+                    )
             print("Serial port opened.")
             self.ser.status = True
         except Exception as e:
@@ -38,7 +43,7 @@ class SerialCtrl:
             self.ser.status = False
         except:
             self.ser.status = False
-
+  
 
 if __name__ == "__main__":
     SerialCtrl() #deactivate just to avoid running the code when this file is imported , for safety
