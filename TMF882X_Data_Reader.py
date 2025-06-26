@@ -12,11 +12,14 @@ TMF882X_IDX_FIELD = (TMF882X_SKIP_FIELDS-1)
 rawSum = [[0 for _ in range(TMF882X_BINS)] for _ in range(TMF882X_CHANNELS)]
 eclSum = [[0 for _ in range(TMF882X_BINS)] for _ in range(TMF882X_CHANNELS)]
 
-class DataReader(threading.Thread):
-    def __init__(self, data_queue, serial_port, channel_number=5):
+class DataReader(threading.Thread): # inherit from threading.Thread class to create a thread
+    def __init__(self, data_queue, serial_port, selected_channels):
         super().__init__(daemon=True)
+        #shared queue and set object with GraphGUI class
         self.data_queue = data_queue
-        self.channel_number = channel_number
+        self.selected_channels = selected_channels
+
+        self.measuring = False 
         self.running = True
         self.arduino = serial_port.ser #serial.Serial(port='COM3', baudrate=115200, timeout=0.1)
         self.setup_arduino()
@@ -58,15 +61,12 @@ class DataReader(threading.Thread):
         # write( 'z' )                                            # raw+calibration histograms
         # waitForArduinoStopTalk()                                # wait for the device to stop talking
 
-    def run(self):
-        print( "Now start measurements ")
-        self.write( 'm' )
+    def run(self): #built-in function that triggers when the thread is started
         while self.running:
-            # # Simulate a line from a TDC sensor
-            # line = f"#RCo{self.channel_number}," + ",".join(str(np.random.randint(0, 100)) for _ in range(128))
-            # self.data_queue.put(line)
-            # # simulate data arriving every second
-            # threading.Event().wait(1)
+            if not self.measuring: # wait for user to start measurements (send 'm' command to arduino)
+                time.sleep(0.1)
+                continue
+
             data = self.read()
             data = data.decode('utf-8')
             data = data.replace('\r','')                    # remove unwanted \r and \n to not have them 
@@ -78,7 +78,7 @@ class DataReader(threading.Thread):
                 if ( row[0] ==  '#Obj' ):
                     rowtowrite = row 
                 elif ( row[0] == '#Raw' and len(row) == TMF882X_BINS+TMF882X_SKIP_FIELDS ):
-                    # skip the I2C slave address field
+                    # skip the I2C slave address field                    
                     idx = int(row[TMF882X_IDX_FIELD])
                     if ( idx >= 0 and idx <= 9 ):
                         for col in range(TMF882X_BINS):
@@ -89,12 +89,12 @@ class DataReader(threading.Thread):
                             rawSum[idx][col] = rawSum[idx][col] + int(row[TMF882X_SKIP_FIELDS+col]) * 256               # mid
                     elif ( idx >= 20 and idx <= 29 ):
                         idx = idx - 20
-                        for col in range(TMF882X_BINS):
-                            rawSum[idx][col] = rawSum[idx][col] + int(row[TMF882X_SKIP_FIELDS+col]) * 256 * 256         # MSB
-                        rowtowrite = ["#RCo"+str( idx )] + rawSum[idx]
-                        # print(rowtowrite) # the row here is an array of the intensity value for each time bin, array[0] is the RCoX string, the rest is the histogram values
-                        #e.g. ['#RCo9', 11, 12, 15, 13, 7, ... , 0, 0, 0]
-                        if rowtowrite[0].startswith(f"#RCo{self.channel_number}"):
+                        if idx in self.selected_channels:  # only process selected channels
+                            for col in range(TMF882X_BINS):
+                                rawSum[idx][col] = rawSum[idx][col] + int(row[TMF882X_SKIP_FIELDS+col]) * 256 * 256         # MSB
+                            rowtowrite = ["#RCo"+str( idx )] + rawSum[idx]
+                            # print(rowtowrite) # the row here is an array of the intensity value for each time bin, array[0] is the RCoX string, the rest is the histogram values
+                            #e.g. ['#RCo9', 11, 12, 15, 13, 7, ... , 0, 0, 0]
                             line = ','.join(map(str, rowtowrite)) + '\n'  # map str() to convert all int in the rowtowrite array to string and join them with a "," separator
                             self.data_queue.put(line)
                             threading.Event().wait(0.8)
@@ -111,10 +111,10 @@ class DataReader(threading.Thread):
                             rawSum[idx][col] = rawSum[idx][col] + int(row[TMF882X_SKIP_FIELDS+col]) * 256               # mid
                     elif ( idx >= 20 and idx <= 29 ):
                         idx = idx - 20
-                        for col in range(TMF882X_BINS):
-                            rawSum[idx][col] = rawSum[idx][col] + int(row[TMF882X_SKIP_FIELDS+col]) * 256 * 256         # MSB
-                        rowtowrite = ["#CCo"+str( idx )] + rawSum[idx]
-                        if rowtowrite[0].startswith(f"#CCo{self.channel_number}"):
+                        if idx in self.selected_channels:  # only process selected channels
+                            for col in range(TMF882X_BINS):
+                                rawSum[idx][col] = rawSum[idx][col] + int(row[TMF882X_SKIP_FIELDS+col]) * 256 * 256         # MSB
+                            rowtowrite = ["#CCo"+str( idx )] + rawSum[idx]
                             line = ','.join(map(str, rowtowrite)) + '\n'  # map str() to convert all int in the rowtowrite array to string and join them with a "," separator
                             self.data_queue.put(line)
                             threading.Event().wait(0.8)
@@ -129,6 +129,17 @@ class DataReader(threading.Thread):
 
         self.arduino.close()                                         # close serial port
         print( "End of program")
+
+    def start_measurement(self):
+        self.measuring = True
+        print( "Starting measurements ... ")
+        self.write('m')
+
+    def stop_measurement(self):
+        self.measuring = False
+        print( "Stopping measurements ... ")
+        self.write('s')
+        self.waitForArduinoStopTalk()
 
     def write(self, x):
         """

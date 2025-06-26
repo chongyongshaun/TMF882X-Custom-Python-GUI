@@ -112,12 +112,10 @@ class ComGUI:
                 InfoMsg = f"Successful UART connection using {self.clicked_com.get()}"
                 messagebox.showinfo("showinfo", InfoMsg)
 
-                # Display the channel manager
-                self.conn = ConnGUI(self.root, self.serial)
-
-                ###
                 self.graph = GraphGUI(self.root, self.serial)
-                ###
+                # Display the channel manager
+                self.conn = ConnGUI(self.root, self.serial, self.graph)
+                
 
             else:
                 ErrorMsg = f"Failure to estabish UART connection using {self.clicked_com.get()} "
@@ -141,70 +139,64 @@ class ComGUI:
             self.drop_com["state"] = "active"
 
 class ConnGUI():
-    def __init__(self, root, serial):
+    def __init__(self, root, serial, graph):
         '''
         Initialize main Widgets for communication GUI
         '''
         self.root = root
         self.serial = serial
+        self.graph = graph
 
         # Build ConnGui Static Elements
         self.frame = LabelFrame(root, text="Connection Manager",
                                 padx=5, pady=5, bg="white", width=60)
-        self.sync_label = Label(
-            self.frame, text="Sync Status: ", bg="white", width=15, anchor="w")
-        self.sync_status = Label(
-            self.frame, text="..Sync..", bg="white", fg="orange", width=5)
+        self.measurement_label = Label(self.frame, text="TMF Status: ", bg="white", width=15, anchor="w")
+        self.measurement_status = Label(self.frame, text="Stopped", bg="white", fg="red", width=5)
 
-        self.ch_label = Label(
-            self.frame, text="Active channels: ", bg="white", width=15, anchor="w")
-        self.ch_status = Label(
-            self.frame, text="...", bg="white", fg="orange", width=5)
+        self.ch_label = Label(self.frame, text="Active channels: ", bg="white", width=15, anchor="w")
+        self.ch_status = Label(self.frame, text="...", bg="white", fg="orange", width=5)
 
-        self.btn_start_stream = Button(self.frame, text="Start", state="disabled",
-                                       width=5, command=self.start_stream)
-
-        self.btn_stop_stream = Button(self.frame, text="Stop", state="disabled",
-                                      width=5, command=self.stop_stream)
-
+        self.btn_toogle_measurement = Button(self.frame, text="Start",
+                                       width=5, command=self.toggle_measurement)
+        # self.btn_stop_stream = Button(self.frame, text="Stop", state="disabled",
+        #                               width=5, command=self.stop_stream)
+        
         self.btn_add_chart = Button(self.frame, text="+", state="disabled",
                                     width=5, bg="white", fg="#098577",
                                     command=self.new_chart)
-
         self.btn_kill_chart = Button(self.frame, text="-", state="disabled",
                                      width=5, bg="white", fg="#CC252C",
                                      command=self.kill_chart)
+        
         self.save = False
         self.SaveVar = IntVar()
         self.save_check = Checkbutton(self.frame, text="Save data", variable=self.SaveVar,
                                       onvalue=1, offvalue=0, bg="white", state="disabled",
                                       command=self.save_data)
 
-        self.separator = ttk.Separator(self.frame, orient='vertical')
-
+        self.separator = ttk.Separator(self.frame, orient='vertical') # Only for aesthetics
+ 
         # Optional Graphic parameters
         self.padx = 20
         self.pady = 15
 
-        # Extending the GUI
-        self.ConnGUIOpen()
+        self.ConnGUIOpen() #publishing the GUI onto the root window (and extending it)
 
     def ConnGUIOpen(self):
         '''
         Method to display all the widgets 
         '''
-        self.root.geometry("800x120")
-        self.frame.grid(row=0, column=4, rowspan=3,
-                        columnspan=5, padx=5, pady=5)
+        self.root.geometry("900x600") # Extend the root window, original size is 360x120
+        self.frame.grid(row=0, column=4, rowspan=3,columnspan=5, padx=5, pady=5)
 
-        self.sync_label.grid(column=1, row=1)
-        self.sync_status.grid(column=2, row=1)
+        self.measurement_label.grid(column=1, row=1)
+        self.measurement_status.grid(column=2, row=1)
 
         self.ch_label.grid(column=1, row=2)
         self.ch_status.grid(column=2, row=2, pady=self.pady)
 
-        self.btn_start_stream.grid(column=3, row=1, padx=self.padx)
-        self.btn_stop_stream.grid(column=3, row=2, padx=self.padx)
+        self.btn_toogle_measurement.grid(column=3, row=1, padx=self.padx)
+        # self.btn_stop_stream.grid(column=3, row=2, padx=self.padx)
 
         self.btn_add_chart.grid(column=4, row=1, padx=self.padx)
         self.btn_kill_chart.grid(column=5, row=1, padx=self.padx)
@@ -222,11 +214,17 @@ class ConnGUI():
         self.frame.destroy()
         self.root.geometry("360x120")
 
-    def start_stream(self):
-        pass
-
-    def stop_stream(self):
-        pass
+    def toggle_measurement(self):
+        if self.graph.reader.measuring:
+            self.graph.reader.stop_measurement()
+            self.btn_toogle_measurement.config(text="Start")
+            self.measurement_status.config(text="Stopped", fg="red")
+            self.save_check.config(state="disabled")
+        else:
+            self.graph.reader.start_measurement()
+            self.btn_toogle_measurement.config(text="Stop")
+            self.measurement_status.config(text="Running", fg="green")
+            self.save_check.config(state="enabled")
 
     def new_chart(self):
         pass
@@ -238,62 +236,21 @@ class ConnGUI():
         pass
 
 
-    
-    def clear_output(self):
-        '''
-        Clear the output display
-        '''
-        self.output_display.config(state="normal")
-        self.output_display.delete(1.0, END)
-        self.output_display.config(state="disabled")
-        self.display_output("Terminal cleared.\n")
-
-    def arduino_setup(self):
-        '''
-        Placeholder for Arduino setup logic
-        '''
-        # give arduinto time to wakeup
-        while ( True ):
-            data = self.serial.read()
-            if ( len(data) > 0 ):
-                print( "started receiving ... ")
-                self.display_output("started receiving ...\n")
-                break                                           # leave waiting loop
-            else:
-                time.sleep( 1.0 )
-                self.serial.write( 'h' )                                    # try to get device talking
-                print("sleeping for 1 second, waiting for arduino to start talking ...")
-                self.display_output("sleeping for 1 second, waiting for arduino to start talking ...\n")
-
-        self.serial.waitForArduinoStopTalk()                                # wait for the device to stop talking
-        print("Arduino is ready to receive commands.")
-        self.display_output("Arduino is ready to receive commands.\n")
-
-        self.serial.write('d')                                            # disable device for a clean start
-        self.serial.waitForArduinoStopTalk()
-
-    def enable_device(self, TMF8828=True):
-        print( "Enable device and download fw ----------------------- ")
-        if TMF8828:
-            self.serial.write('e')                                        # enable device e is for 8288, E is for 882x
-        else: # TMF 882X
-            self.serial.write( 'E' )                                            
-        self.serial.waitForArduinoStartTalk()                               # wait for the device to start talking
-        self.serial.waitForArduinoStopTalk()                                # wait for the device to stop talking
-
 class GraphGUI():
     def __init__(self, root, serial):
         self.root = root
         self.serial = serial
+        self.build_channel_selector()
 
         # Set up data queue and data reader thread
         self.data_queue = queue.Queue()
-        self.reader = DataReader(self.data_queue, self.serial)
+        self.selected_channels = set() 
+        self.reader = DataReader(self.data_queue, self.serial, self.selected_channels)
         self.reader.start()
 
         # Set up the graph frame
         self.frame = LabelFrame(root, text="Live Histogram", padx=5, pady=5, bg="white")
-        self.frame.grid(row=3, column=0, columnspan=7, padx=5, pady=5, sticky="nsew")
+        self.frame.grid(row=3, column=0, columnspan=10, padx=5, pady=5, sticky="nsew")
 
         # Create matplotlib figure
         self.fig, self.ax = plt.subplots(figsize=(6, 2.5))
@@ -321,6 +278,48 @@ class GraphGUI():
 
         # Schedule next update
         self.root.after(100, self.update_plot)
+
+    def build_channel_selector(self):
+        self.frame = LabelFrame(self.root, text="TDC Channel", padx=5, pady=5, bg="white")
+        self.frame.grid(row=7, column=0, columnspan=3, sticky="nw", padx=5, pady=5)
+
+        # Canvas and scrollbar setup
+        canvas = Canvas(self.frame, height=120, bg="white")
+        scrollbar = Scrollbar(self.frame, orient="vertical", command=canvas.yview)
+        self.inner_frame = Frame(canvas, bg="white")
+        self.inner_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+
+        canvas.create_window((0, 0), window=self.inner_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
+        # apply button to update the selected channels
+        apply_btn = Button(self.inner_frame, text="Apply", command=self.apply_selected_channels, bg="white", fg="black")
+        apply_btn.pack(pady=(10, 0))
+        
+        # Checkboxes for channels
+        self.channel_vars = []
+        for i in range(10):
+            var = IntVar()
+            chk = Checkbutton(self.inner_frame, text=f"Channel {i}", variable=var, bg="white")
+            chk.pack(anchor="w")
+            self.channel_vars.append(var)
+        
+
+    def get_selected_channels(self):
+        """Returns a list of selected channel numbers"""
+        return [i for i, var in enumerate(self.channel_vars) if var.get()]
+    
+    def apply_selected_channels(self):
+        """Updates the selected channels"""
+        self.selected_channels.clear()
+        self.selected_channels.update(self.get_selected_channels())
+        print(f"Selected channels updated: {sorted(self.selected_channels)}")
 
 if __name__ == "__main__": #make sure this only runs when this file is run directly
     RootGUI()
