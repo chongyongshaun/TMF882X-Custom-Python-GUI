@@ -124,11 +124,14 @@ class ComGUI:
 
             # Closing the Serial COM
             # Close the serial communication
+            
             self.serial.SerialClose(self)
 
             # Closing the Conn Manager
             # Destroy the channel manager
             self.conn.ConnGUIClose()
+            self.graph.GraphGUIClose()
+            self.graph.destroy_channel_selector()
 
             # display message and update COM GUI buttons
             InfoMsg = f"UART connection using {self.clicked_com.get()} is now closed"
@@ -224,7 +227,7 @@ class ConnGUI():
             self.graph.reader.start_measurement()
             self.btn_toogle_measurement.config(text="Stop")
             self.measurement_status.config(text="Running", fg="green")
-            self.save_check.config(state="enabled")
+            self.save_check.config(state="normal")
 
     def new_chart(self):
         pass
@@ -248,44 +251,95 @@ class GraphGUI():
         self.reader = DataReader(self.data_queue, self.serial, self.selected_channels)
         self.reader.start()
 
+        self.subplots = {}  # channel_num -> (ax, bars)
+        self.canvas = None
+
         # Set up the graph frame
         self.frame = LabelFrame(root, text="Live Histogram", padx=5, pady=5, bg="white")
         self.frame.grid(row=3, column=0, columnspan=10, padx=5, pady=5, sticky="nsew")
 
-        # Create matplotlib figure
-        self.fig, self.ax = plt.subplots(figsize=(6, 2.5))
-        self.bars = self.ax.bar(np.arange(128), np.zeros(128))
-        self.ax.set_ylim(0, 100)
-
-        self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame)
-        self.canvas.get_tk_widget().pack(fill=BOTH, expand=1)
-
         self.update_plot()
+
+    def GraphGUIClose(self):
+        '''
+        Method to close the graph GUI and destroy the widgets
+        '''
+        # Must destroy all the element so they are not kept in Memory
+        for widget in self.frame.winfo_children():
+            widget.destroy()
+        self.frame.destroy()
+        self.root.geometry("360x120")
+
+        # Stop the data reader thread
+        self.reader.running = False
+        self.reader.join()
+        
 
     def update_plot(self):
         while not self.data_queue.empty():
             line = self.data_queue.get()
+            print(f"Line: {line}")  # Debug
             parts = line.strip().split(",")
+
             if len(parts) == 129 and parts[0].startswith("#RCo"):
                 try:
-                    values = np.array(list(map(int, parts[1:])))
-                    for bar, val in zip(self.bars, values):
-                        bar.set_height(val)
-                    self.ax.set_ylim(0, values.max() * 1.1)
+                    channel_str = parts[0][4:]  # e.g., "#RCo2" → "2"
+                    channel = int(channel_str)
+                    if channel in self.selected_channels and channel in self.subplots:
+                        values = np.array(list(map(int, parts[1:])))
+                        ax, bars = self.subplots[channel]
+                        for bar, val in zip(bars, values):
+                            bar.set_height(val)
+                        ax.set_ylim(0, values.max() * 1.1)
                     self.canvas.draw()
                 except Exception as e:
                     print(f"Error updating plot: {e}")
 
-        # Schedule next update
-        self.root.after(100, self.update_plot)
+        self.root.after(50, self.update_plot)
+
+    def build_graphs_for_selected_channels(self):
+        # Clear old canvas and subplots
+        if self.canvas:
+            self.canvas.get_tk_widget().destroy()
+            self.canvas = None
+        self.subplots.clear()
+
+        num_channels = len(self.selected_channels)
+        if num_channels == 0:
+            return
+
+        # Define grid: max 3 columns
+        cols = 3
+        rows = (num_channels + cols - 1) // cols  # ceil division
+
+        # Create new figure and subplots
+        self.fig, axes = plt.subplots(rows, cols, figsize=(cols * 4, rows * 2.5))
+        axes = np.array(axes).reshape(-1)  # Flatten in case of 2D or 1D result
+
+        # Only keep as many axes as needed
+        axes = axes[:num_channels]
+
+        for ax in axes:
+            ax.clear()  # clear previous content
+
+        for i, (channel, ax) in enumerate(zip(sorted(self.selected_channels), axes)):
+            ax.set_title(f"Channel {channel}")
+            ax.set_ylim(0, 100)
+            bars = ax.bar(np.arange(128), np.zeros(128))
+            self.subplots[channel] = (ax, bars)
+
+        self.fig.tight_layout()
+        self.canvas = FigureCanvasTkAgg(self.fig, master=self.frame)
+        self.canvas.draw()
+        self.canvas.get_tk_widget().pack(fill=BOTH, expand=1)
 
     def build_channel_selector(self):
-        self.frame = LabelFrame(self.root, text="TDC Channel", padx=5, pady=5, bg="white")
-        self.frame.grid(row=7, column=0, columnspan=3, sticky="nw", padx=5, pady=5)
+        self.channel_frame = LabelFrame(self.root, text="TDC Channel", padx=5, pady=5, bg="white")
+        self.channel_frame.grid(row=7, column=0, columnspan=3, sticky="nw", padx=5, pady=5)
 
         # Canvas and scrollbar setup
-        canvas = Canvas(self.frame, height=120, bg="white")
-        scrollbar = Scrollbar(self.frame, orient="vertical", command=canvas.yview)
+        canvas = Canvas(self.channel_frame, height=120, bg="white")
+        scrollbar = Scrollbar(self.channel_frame, orient="vertical", command=canvas.yview)
         self.inner_frame = Frame(canvas, bg="white")
         self.inner_frame.bind(
             "<Configure>",
@@ -309,7 +363,12 @@ class GraphGUI():
             chk = Checkbutton(self.inner_frame, text=f"Channel {i}", variable=var, bg="white")
             chk.pack(anchor="w")
             self.channel_vars.append(var)
-        
+
+    def destroy_channel_selector(self):
+        """Destroys the channel selector frame and its widgets"""
+        for widget in self.channel_frame.winfo_children():
+            widget.destroy()
+        self.channel_frame.destroy()
 
     def get_selected_channels(self):
         """Returns a list of selected channel numbers"""
@@ -320,6 +379,8 @@ class GraphGUI():
         self.selected_channels.clear()
         self.selected_channels.update(self.get_selected_channels())
         print(f"Selected channels updated: {sorted(self.selected_channels)}")
+
+        self.build_graphs_for_selected_channels()
 
 if __name__ == "__main__": #make sure this only runs when this file is run directly
     RootGUI()
